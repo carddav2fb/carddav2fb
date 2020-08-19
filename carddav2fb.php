@@ -4,8 +4,8 @@
  * inspired by http://www.wehavemorefun.de/fritzbox/Hochladen_eines_MySQL-Telefonbuchs
  * 
  * Requirements: 
- *   php5, php5-curl, php5-ftp
- * 
+ *   php7, php7-curl, php7-ftp (for alpine some more, check Dockerfile.rpi)
+ *
  * used libraries: 
  *  *  vCard-parser <https://github.com/nuovo/vCard-parser> (LICNECE: unknown)
  *  *  CardDAV-PHP <https://github.com/graviox/CardDAV-PHP>(LICENCE: AGPLv3)
@@ -17,16 +17,17 @@
  *         Martin Rost
  *         Jens Maus <mail@jens-maus.de>
  *         Johannes Freiburger
+ *         Oliver Faßbender
  *
  */
 error_reporting(E_ALL);
 setlocale(LC_ALL, 'de_DE.UTF8');
 
 // Version identifier for CardDAV2FB
-$carddav2fb_version = '1.11 (2016-05-12)';
+$carddav2fb_version = '1.11a (2020-08-19)';
 
 // check for the minimum php version
-$php_min_version = '5.3.6';
+$php_min_version = '7.0.0';
 if(version_compare(PHP_VERSION, $php_min_version) < 0)
 {
   print 'ERROR: PHP version ' . $php_min_version . ' is required. Found version: ' . PHP_VERSION . PHP_EOL;
@@ -58,6 +59,7 @@ $config['addnames'] = false;
 $config['orgname'] = false;
 $config['build_photos'] = true;
 $config['quickdial_keyword'] = 'Quickdial:';
+$config['fallback_type'] = 'other';
 
 if(is_file($config_file_name))
   require($config_file_name);
@@ -70,7 +72,7 @@ else
 // ---------------------------------------------
 // MAIN
 print "carddav2fb.php " . $carddav2fb_version . " - CardDAV to FRITZ!Box phonebook conversion tool" . PHP_EOL;
-print "Copyright (c) 2012-2016 Karl Glatz, Martin Rost, Jens Maus, Johannes Freiburger" . PHP_EOL . PHP_EOL;
+print "Copyright (c) 2012-2020 Karl Glatz, Martin Rost, Jens Maus, Johannes Freiburger, Oliver Faßbender" . PHP_EOL . PHP_EOL;
 
 $client = new CardDAV2FB($config);
 
@@ -392,7 +394,7 @@ class CardDAV2FB
               if($found > 0)
               {
                 $pos_qd_start = strrpos($linecontent, ":**7");
-                $quick_dial_for_nr = preg_replace("/[^0-9+]/", "", substr($linecontent, 0, $pos_qd_start));
+                $quick_dial_for_nr = preg_replace("/[^0-9+*#]/", "", substr($linecontent, 0, $pos_qd_start));
                 $quick_dial_nr = intval(substr($linecontent, $pos_qd_start + 4, 3));
                 $quick_dial_arr[$quick_dial_for_nr] = $quick_dial_nr;
               }
@@ -424,17 +426,17 @@ class CardDAV2FB
             {
               $prio = 0;
               $quickdial = null;
-              
+
               if(!is_array($t) || empty($t['type']))
               {
-                $type = "mobile";
+                $type = $conf['fallback_type'];
                 $phone_number = $t;
               }
               else
               {
                 $phone_number = $t['value'];
-                
-                $phone_number_clean = preg_replace("/[^0-9+]/", "", $phone_number);
+
+                $phone_number_clean = preg_replace("/[^0-9+*#]/", "", $phone_number);
                 foreach($quick_dial_arr as $qd_phone_nr => $value)
                 {
                   if($qd_phone_nr == $phone_number_clean)
@@ -448,7 +450,7 @@ class CardDAV2FB
                     $quickdial = $value;
                   }
                 }
-		      
+
                 foreach($t['type'] as $k=>$v) {
                   $t['type'][$k] = str_replace('"','',$v);
                 }
@@ -462,18 +464,18 @@ class CardDAV2FB
                 // set the proper type
                 if(in_array("cell", $typearr_lower))
                   $type = "mobile";
-                elseif(in_array("home", $typearr_lower))
-                  $type = "home";
                 elseif(in_array("fax", $typearr_lower))
                   $type = "fax_work";
                 elseif(in_array("work", $typearr_lower))
                   $type = "work";
+                elseif(in_array("home", $typearr_lower))
+                  $type = "home";
                 elseif(in_array("other", $typearr_lower))
-                  $type = "other";
+                  $type = $conf['fallback_type'];
                 elseif(in_array("dom", $typearr_lower))
-                  $type = "other";
+                  $type = $conf['fallback_type'];
                 elseif(in_array("voice", $typearr_lower))
-                  $type = "other";
+                  $type = $conf['fallback_type'];
                 else
                   continue;
               }
@@ -523,7 +525,7 @@ class CardDAV2FB
 
   private function _clear_phone_number($number)
   {
-    return preg_replace("/[^0-9+]/", "", $number);
+    return preg_replace("/[^0-9+*#]/", "", $number);
   }
 
   public function build_fb_xml()
